@@ -1,4 +1,8 @@
 #include <Novice.h>
+#define _USE_MATH_DEFINES
+#include <cmath>
+#include <assert.h>
+#include <imgui.h>
 #include "Matrix4x4.h"
 #include "Vector3.h"
 #include "VectorMatrix.h"
@@ -13,6 +17,12 @@ struct Segment
 {
 	Vector3 origin;		//始点
 	Vector3 diff;		//終点からの差分
+};
+
+//三角形の頂点
+struct Triangle
+{
+	Vector3 vertices[3];	//!< 頂点
 };
 
 //Gridを表示する疑似コード
@@ -58,11 +68,63 @@ static void DrawGrid(const Matrix4x4& ViewProjectionMatrix, const Matrix4x4& Vie
 	}
 }
 
+//三角形を描画するコード
+void DrawTriangle(const Triangle& triangle, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
+{
+	Vector3 screenVertices[3];
+	for (int i = 0; i < 3; ++i) {
+		screenVertices[i] = Transform(Transform(triangle.vertices[i], viewProjectionMatrix), viewportMatrix);
+	}
+	Novice::DrawTriangle((int)screenVertices[0].x, (int)screenVertices[0].y,
+		(int)screenVertices[1].x, (int)screenVertices[1].y,
+		(int)screenVertices[2].x, (int)screenVertices[2].y,
+		color, kFillModeWireFrame);
+}
+
+//三角形と線の衝突判定
+bool IsCollision(const Triangle& triangle, const Segment& segment)
+{
+	// 平面の法線ベクトルを計算
+	Vector3 edge1 = Subtract(triangle.vertices[1], triangle.vertices[0]);
+	Vector3 edge2 = Subtract(triangle.vertices[2], triangle.vertices[0]);
+	Vector3 normal = Cross(edge1, edge2);
+	normal = Normalize(normal);
+
+	// 線分の方向ベクトル
+	Vector3 dir = segment.diff;
+	dir = Normalize(dir);
+
+	// 線分の始点と三角形の一つの頂点を結ぶベクトル
+	Vector3 diff = Subtract(triangle.vertices[0], segment.origin);
+
+	// 平面と線分の交点を計算
+	float d = Dot(normal, diff) / Dot(normal, dir);
+	if (d < 0.0f || d > Length(segment.diff)) {
+		return false; // 線分上に交点がない
+	}
+
+	Vector3 intersection = Add(segment.origin, Multiply(d, dir));
+
+	// 三角形内に交点があるかを確認
+	Vector3 v0p = Subtract(intersection, triangle.vertices[0]);
+	Vector3 v1p = Subtract(intersection, triangle.vertices[1]);
+	Vector3 v2p = Subtract(intersection, triangle.vertices[2]);
+
+	Vector3 cross01 = Cross(edge1, v0p);
+	Vector3 cross12 = Cross(Subtract(triangle.vertices[2], triangle.vertices[1]), v1p);
+	Vector3 cross20 = Cross(edge2, v2p);
+
+	if (Dot(cross01, normal) >= 0.0f && Dot(cross12, normal) >= 0.0f && Dot(cross20, normal) >= 0.0f) {
+		return true; // 衝突
+	}
+
+	return false; // 衝突なし
+}
 
 const char kWindowTitle[] = "提出用課題";
 
 // Windowsアプリでのエントリーポイント(main関数)
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) 
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
 
 	// ライブラリの初期化
@@ -72,18 +134,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
-	Segment segment{ {-2.0f,-1.0f,0.0f},{3.0f,2.0f,2.0f} };
-	Vector3 point{ -1.5f,0.6f,0.6f };
+	Segment segment{ {-2.0f, -1.0f, 0.0f}, {3.0f, 2.0f, 2.0f} };
+	Triangle triangle = { {{-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}} };
 
-	//SRTの情報
 	Vector3 rotate = {};
 	Vector3 translate = {};
-
-	//カメラの位置
-	Vector3 camaraTranslate = { 0.0f,1.9f,-6.49f };
-
-	//カメラの角度
-	Vector3 cameraRotate = { 0.26f,0.0f,0.0f };
+	Vector3 cameraTranslate = { 0.0f, 1.9f, -6.49f };
+	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0)
@@ -99,9 +156,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		/// ↓更新処理ここから
 		///
 
+		ImGui::Begin("Settings");
+		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
+		ImGui::DragFloat3("Segment Diff", &segment.diff.x, 0.01f);
+		ImGui::DragFloat3("Camera Translate", &cameraTranslate.x, 0.01f);
+		ImGui::DragFloat3("Camera Rotate", &cameraRotate.x, 0.01f);
+		ImGui::End();
+
 		//各種行列の計算
 		Matrix4x4 worldMatrix = MakeAffineMatrix({ 1.0f,1.0f,1.0f }, rotate, translate);
-		Matrix4x4 cameraMatrxi = MakeAffineMatrix({ 1.0f,1.0f,1.0f }, cameraRotate, camaraTranslate);
+		Matrix4x4 cameraMatrxi = MakeAffineMatrix({ 1.0f,1.0f,1.0f }, cameraRotate, cameraTranslate);
 		Matrix4x4 viewWorldMatrix = Inverse(worldMatrix);
 		Matrix4x4 viewCameraMatrix = Inverse(cameraMatrxi);
 
@@ -109,13 +173,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 
 		//ビュー座標変換行列を作成
-		Matrix4x4 ViewProjectionMatrix = Multiply(viewWorldMatrix, Multiply(viewCameraMatrix, projectionMatrix));
+		Matrix4x4 viewProjectionMatrix = Multiply(viewWorldMatrix, Multiply(viewCameraMatrix, projectionMatrix));
 
 		//ViewportMatrixビューポート変換行列を作成
-		Matrix4x4 ViewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
-		Vector3 start = Transform(Transform(segment.origin, ViewProjectionMatrix), ViewportMatrix);
-		Vector3 end = Transform(Transform(Add(segment.origin, segment.diff), ViewProjectionMatrix), ViewportMatrix);
+		Vector3 start = Transform(Transform(segment.origin, viewProjectionMatrix), viewportMatrix);
+		Vector3 end = Transform(Transform(Add(segment.origin, segment.diff), viewProjectionMatrix), viewportMatrix);
 
 		///
 		/// ↑更新処理ここまで
@@ -125,6 +189,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		/// ↓描画処理ここから
 		///
 
+		// Gridを描画
+		DrawGrid(viewProjectionMatrix, viewportMatrix);
+
+		// 衝突判定
+		uint32_t color = IsCollision(triangle, segment) ? 0xFF0000FF : 0xFFFFFFFF;
+
+		// 描画処理
+		DrawTriangle(triangle, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		Novice::DrawLine((int)start.x, (int)start.y, (int)end.x, (int)end.y, color);
+
 		///
 		/// ↑描画処理ここまで
 		///
@@ -133,7 +207,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		Novice::EndFrame();
 
 		// ESCキーが押されたらループを抜ける
-		if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0) 
+		if (preKeys[DIK_ESCAPE] == 0 && keys[DIK_ESCAPE] != 0)
 		{
 			break;
 		}
