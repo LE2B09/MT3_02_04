@@ -35,36 +35,33 @@ static void DrawGrid(const Matrix4x4& ViewProjectionMatrix, const Matrix4x4& Vie
 	//水平方向の線を描画
 	for (uint32_t xIndex = 0; xIndex <= kSubdivision; xIndex++)
 	{
-		//上の情報を使ってワールド座標系上の始点と終点を求める
 		//X軸上の座標
 		float posX = -kGridHalfWidth + kGridEvery * xIndex;
 
 		//始点と終点
 		Vector3 start = { posX, 0.0f, -kGridHalfWidth };
 		Vector3 end = { posX, 0.0f, kGridHalfWidth };
-		//// ワールド座標系 -> スクリーン座標系まで変換をかける
+		// ワールド座標系 -> スクリーン座標系まで変換をかける
 		start = Transform(start, Multiply(ViewProjectionMatrix, ViewportMatrix));
 		end = Transform(end, Multiply(ViewProjectionMatrix, ViewportMatrix));
 
-		//左から右も同じように順々に引いていく
-		for (uint32_t zIndex = 0; zIndex <= kSubdivision; zIndex++)
-		{
-			//奥から手前が左右に代わるだけ
-			//上の情報を使ってワールド座標系上の始点と終点を求める
-			//Z軸上の座標
-			float posZ = -kGridHalfWidth + kGridEvery * zIndex;
+		Novice::DrawLine((int)start.x, (int)start.y, (int)end.x, (int)end.y, 0x6F6F6FFF);
+	}
 
-			//始点と終点
-			Vector3 startZ = { -kGridHalfWidth, 0.0f, posZ };
-			Vector3 endZ = { kGridHalfWidth, 0.0f, posZ };
-			//// ワールド座標系 -> スクリーン座標系まで変換をかける
-			startZ = Transform(startZ, Multiply(ViewProjectionMatrix, ViewportMatrix));
-			endZ = Transform(endZ, Multiply(ViewProjectionMatrix, ViewportMatrix));
+	//垂直方向の線を描画
+	for (uint32_t zIndex = 0; zIndex <= kSubdivision; zIndex++)
+	{
+		//Z軸上の座標
+		float posZ = -kGridHalfWidth + kGridEvery * zIndex;
 
-			//変換した画像を使って表示。色は薄い灰色(0xAAAAAAFF)、原点は黒ぐらいがいいが、なんでもいい
-			Novice::DrawLine((int)start.x, (int)start.y, (int)end.x, (int)end.y, 0x6F6F6FFF);
-			Novice::DrawLine((int)startZ.x, (int)startZ.y, (int)endZ.x, (int)endZ.y, 0x6F6F6FFF);
-		}
+		//始点と終点
+		Vector3 startZ = { -kGridHalfWidth, 0.0f, posZ };
+		Vector3 endZ = { kGridHalfWidth, 0.0f, posZ };
+		// ワールド座標系 -> スクリーン座標系まで変換をかける
+		startZ = Transform(startZ, Multiply(ViewProjectionMatrix, ViewportMatrix));
+		endZ = Transform(endZ, Multiply(ViewProjectionMatrix, ViewportMatrix));
+
+		Novice::DrawLine((int)startZ.x, (int)startZ.y, (int)endZ.x, (int)endZ.y, 0x6F6F6FFF);
 	}
 }
 
@@ -72,7 +69,8 @@ static void DrawGrid(const Matrix4x4& ViewProjectionMatrix, const Matrix4x4& Vie
 void DrawTriangle(const Triangle& triangle, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color)
 {
 	Vector3 screenVertices[3];
-	for (int i = 0; i < 3; ++i) {
+	for (int i = 0; i < 3; ++i) 
+	{
 		screenVertices[i] = Transform(Transform(triangle.vertices[i], viewProjectionMatrix), viewportMatrix);
 	}
 	Novice::DrawTriangle((int)screenVertices[0].x, (int)screenVertices[0].y,
@@ -84,9 +82,11 @@ void DrawTriangle(const Triangle& triangle, const Matrix4x4& viewProjectionMatri
 //三角形と線の衝突判定
 bool IsCollision(const Triangle& triangle, const Segment& segment)
 {
-	// 平面の法線ベクトルを計算
+	// 三角形の辺
 	Vector3 edge1 = Subtract(triangle.vertices[1], triangle.vertices[0]);
 	Vector3 edge2 = Subtract(triangle.vertices[2], triangle.vertices[0]);
+
+	// 平面の法線ベクトルを計算
 	Vector3 normal = Cross(edge1, edge2);
 	normal = Normalize(normal);
 
@@ -94,39 +94,45 @@ bool IsCollision(const Triangle& triangle, const Segment& segment)
 	Vector3 dir = segment.diff;
 	dir = Normalize(dir);
 
-	// 線分の始点と三角形の一つの頂点を結ぶベクトル
+	// 平面と線分の始点のベクトル
 	Vector3 diff = Subtract(triangle.vertices[0], segment.origin);
 
-	// 平面と線分の交点を計算
-	float d = Dot(normal, diff) / Dot(normal, dir);
-	if (d < 0.0f || d > Length(segment.diff)) {
+	// 線分が平面と平行かどうかをチェック
+	float dotND = Dot(normal, dir);
+	if (fabs(dotND) < 1e-6f)
+	{
+		return false; // 線分が平面と平行
+	}
+
+	// 線分の始点と平面の交点を計算
+	float t = Dot(normal, diff) / dotND;
+
+	if (t < 0.0f || t > Length(segment.diff))
+	{
 		return false; // 線分上に交点がない
 	}
 
-	Vector3 intersection = Add(segment.origin, Multiply(d, dir));
+	Vector3 intersection = Add(segment.origin, Multiply(t, dir));
 
-	// 三角形内に交点があるかを確認
-	Vector3 v0p = Subtract(intersection, triangle.vertices[0]);
-	Vector3 v1p = Subtract(intersection, triangle.vertices[1]);
-	Vector3 v2p = Subtract(intersection, triangle.vertices[2]);
+	// バリツチェックで三角形の内部に交点があるかを確認
+	Vector3 c0 = Cross(Subtract(triangle.vertices[1], triangle.vertices[0]), Subtract(intersection, triangle.vertices[0]));
+	Vector3 c1 = Cross(Subtract(triangle.vertices[2], triangle.vertices[1]), Subtract(intersection, triangle.vertices[1]));
+	Vector3 c2 = Cross(Subtract(triangle.vertices[0], triangle.vertices[2]), Subtract(intersection, triangle.vertices[2]));
 
-	Vector3 cross01 = Cross(edge1, v0p);
-	Vector3 cross12 = Cross(Subtract(triangle.vertices[2], triangle.vertices[1]), v1p);
-	Vector3 cross20 = Cross(edge2, v2p);
-
-	if (Dot(cross01, normal) >= 0.0f && Dot(cross12, normal) >= 0.0f && Dot(cross20, normal) >= 0.0f) {
+	if (Dot(c0, normal) >= 0.0f && Dot(c1, normal) >= 0.0f && Dot(c2, normal) >= 0.0f)
+	{
 		return true; // 衝突
 	}
 
 	return false; // 衝突なし
 }
 
+
 const char kWindowTitle[] = "提出用課題";
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
-
 	// ライブラリの初期化
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
 
@@ -134,7 +140,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
-	Segment segment{ {-2.0f, -1.0f, 0.0f}, {3.0f, 2.0f, 2.0f} };
+	Segment segment{ {0.0f, -1.0f, 0.0f}, {1.0f, 2.0f, 2.0f} };
 	Triangle triangle = { {{-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}} };
 
 	Vector3 rotate = {};
@@ -159,6 +165,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		ImGui::Begin("Settings");
 		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
 		ImGui::DragFloat3("Segment Diff", &segment.diff.x, 0.01f);
+		ImGui::DragFloat3("Triangle Vertex 0", &triangle.vertices[0].x, 0.01f);
+		ImGui::DragFloat3("Triangle Vertex 1", &triangle.vertices[1].x, 0.01f);
+		ImGui::DragFloat3("Triangle Vertex 2", &triangle.vertices[2].x, 0.01f);
+		ImGui::DragFloat3("rotate", &rotate.x, 0.01f);
 		ImGui::DragFloat3("Camera Translate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("Camera Rotate", &cameraRotate.x, 0.01f);
 		ImGui::End();

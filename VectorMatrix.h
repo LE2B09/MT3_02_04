@@ -118,7 +118,7 @@ static Vector3 Cross(const Vector3& v1, const Vector3& v2) {
 //
 //	return closestPointOnSegment;
 //}
-//
+
 
 // 行列の積
 static Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
