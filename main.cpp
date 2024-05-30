@@ -61,7 +61,7 @@ static void DrawGrid(const Matrix4x4& ViewProjectionMatrix, const Matrix4x4& Vie
 		startZ = Transform(startZ, Multiply(ViewProjectionMatrix, ViewportMatrix));
 		endZ = Transform(endZ, Multiply(ViewProjectionMatrix, ViewportMatrix));
 
-		Novice::DrawLine((int)startZ.x, (int)startZ.y, (int)endZ.x, (int)endZ.y, 0x6F6F6FFF);
+		Novice::DrawLine((int)startZ.x, (int)startZ.y, (int)endZ.x, (int)endZ.y, 0x6F6F6FFF); 
 	}
 }
 
